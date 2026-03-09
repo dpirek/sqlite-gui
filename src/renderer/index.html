@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SQLite GUI</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>SQLite GUI</h1>
+      <button id="open-db-btn">Open SQLite File</button>
+      <span id="db-path">No database selected</span>
+      <button id="theme-toggle-btn" class="ghost-btn">Dark Mode</button>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <h2>Tables</h2>
+        <ul id="tables"></ul>
+      </aside>
+
+      <section class="workspace">
+        <label for="query">SQL Query</label>
+        <textarea id="query" spellcheck="false">SELECT name FROM sqlite_master WHERE type='table';</textarea>
+        <div class="actions">
+          <button id="run-query-btn">Run Query</button>
+        </div>
+
+        <div id="status" class="status">Ready.</div>
+
+        <div class="results-wrap">
+          <table id="results"></table>
+        </div>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
