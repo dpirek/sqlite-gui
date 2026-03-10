@@ -15,6 +15,7 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@electron-forge/publisher-github": "^7.11.1",
     "electron": "^36.0.0"
   }
 }
