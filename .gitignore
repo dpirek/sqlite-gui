@@ -1,5 +1,8 @@
 # dependencies
 node_modules/
 
+# local secrets
+.env
+
 # macOS
 .DS_Store

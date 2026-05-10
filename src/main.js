@@ -13,6 +13,9 @@ let mainWindow;
 let activeDb = null;
 let activeDbPath = null;
 
+const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
+const DEFAULT_OPENAI_MODEL = 'gpt-5';
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100,
@@ -55,6 +58,62 @@ function openDatabaseFile(filePath) {
   return { filePath };
 }
 
+function parseEnvFile(content) {
+  const values = {};
+
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    const equalsIndex = trimmed.indexOf('=');
+    if (equalsIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, equalsIndex).trim();
+    let value = trimmed.slice(equalsIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    values[key] = value;
+  }
+
+  return values;
+}
+
+function loadEnv() {
+  const envPaths = [path.join(process.cwd(), '.env'), path.join(app.getAppPath(), '.env')];
+  let envValues = {};
+
+  for (const envPath of envPaths) {
+    try {
+      if (fs.existsSync(envPath)) {
+        envValues = { ...envValues, ...parseEnvFile(fs.readFileSync(envPath, 'utf8')) };
+      }
+    } catch (_error) {
+      // Ignore unreadable .env files and fall back to process.env.
+    }
+  }
+
+  return { ...envValues, ...process.env };
+}
+
+function getOpenAIConfig() {
+  const env = loadEnv();
+  return {
+    apiKey: env.OPENAI_API_KEY || env.OPENAPI_API_KEY || '',
+    model: env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL
+  };
+}
+
 function quoteIdentifier(identifier) {
   return `"${String(identifier).replace(/"/g, '""')}"`;
 }
@@ -65,6 +124,103 @@ function ensureDbReady() {
   }
 
   return null;
+}
+
+function getDatabaseSchemaContext() {
+  const dbError = ensureDbReady();
+  if (dbError) {
+    return dbError;
+  }
+
+  try {
+    const objects = activeDb
+      .prepare(
+        "SELECT type, name, tbl_name AS tableName, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type, name"
+      )
+      .all();
+    const tables = objects.filter((object) => object.type === 'table');
+    const lines = [`Database file: ${activeDbPath}`, '', 'Tables:'];
+
+    for (const table of tables) {
+      lines.push(`- ${table.name}`);
+
+      const columns = activeDb.prepare(`PRAGMA table_info(${quoteIdentifier(table.name)})`).all();
+      for (const column of columns) {
+        const parts = [
+          `  - ${column.name}`,
+          column.type || 'ANY',
+          column.pk ? 'PRIMARY KEY' : '',
+          column.notnull ? 'NOT NULL' : '',
+          column.dflt_value !== null && column.dflt_value !== undefined ? `DEFAULT ${column.dflt_value}` : ''
+        ].filter(Boolean);
+        lines.push(parts.join(' '));
+      }
+
+      const foreignKeys = activeDb.prepare(`PRAGMA foreign_key_list(${quoteIdentifier(table.name)})`).all();
+      for (const foreignKey of foreignKeys) {
+        lines.push(`  - FOREIGN KEY ${foreignKey.from} REFERENCES ${foreignKey.table}(${foreignKey.to})`);
+      }
+    }
+
+    lines.push('', 'DDL:');
+    for (const object of objects) {
+      lines.push(`-- ${object.type}: ${object.name}`);
+      lines.push(`${object.sql};`);
+    }
+
+    const schema = lines.join('\n');
+    const maxSchemaLength = 30000;
+
+    if (schema.length > maxSchemaLength) {
+      return {
+        schema: `${schema.slice(0, maxSchemaLength)}\n\n-- Schema truncated at ${maxSchemaLength} characters.`
+      };
+    }
+
+    return { schema };
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+function extractResponseText(responseBody) {
+  if (typeof responseBody.output_text === 'string') {
+    return responseBody.output_text;
+  }
+
+  const chunks = [];
+
+  for (const outputItem of responseBody.output || []) {
+    for (const contentItem of outputItem.content || []) {
+      if (typeof contentItem.text === 'string') {
+        chunks.push(contentItem.text);
+      }
+    }
+  }
+
+  return chunks.join('\n').trim();
+}
+
+function buildSqlAssistantPrompt(question, schema, history = []) {
+  const historyText = history
+    .slice(-8)
+    .map((message) => `${message.role}: ${message.content}`)
+    .join('\n\n');
+
+  return [
+    'You are a SQLite query assistant inside a local SQLite GUI.',
+    'Use only the database schema provided below. Do not invent table or column names.',
+    'Generate SQLite-compatible SQL for the user request.',
+    'Prefer SELECT queries unless the user explicitly asks to modify data.',
+    'Return a short explanation followed by a fenced sql code block with the best query.',
+    historyText ? ['', 'Recent chat:', historyText].join('\n') : '',
+    '',
+    'Schema:',
+    schema,
+    '',
+    'User request:',
+    question
+  ].join('\n');
 }
 
 app.whenReady().then(() => {
@@ -297,6 +453,70 @@ ipcMain.handle('db:query', async (_event, sql) => {
       mode: 'run',
       changes: result.changes,
       lastInsertRowid: Number(result.lastInsertRowid ?? 0)
+    };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('ai:generate-sql', async (_event, payload) => {
+  const question = String(payload?.message || '').trim();
+  const history = Array.isArray(payload?.history)
+    ? payload.history
+        .filter((message) => message && (message.role === 'user' || message.role === 'assistant'))
+        .map((message) => ({
+          role: message.role,
+          content: String(message.content || '').slice(0, 4000)
+        }))
+    : [];
+
+  if (!question) {
+    return { error: 'Ask the assistant what SQL to generate.' };
+  }
+
+  const schemaResult = getDatabaseSchemaContext();
+  if (schemaResult.error) {
+    return schemaResult;
+  }
+
+  const { apiKey, model } = getOpenAIConfig();
+  if (!apiKey) {
+    return { error: 'Missing OPENAI_API_KEY in .env or process environment.' };
+  }
+
+  try {
+    const response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        instructions:
+          'You generate clear, correct SQLite SQL from user requests. Keep explanations brief and always include the SQL in a fenced sql code block.',
+        input: buildSqlAssistantPrompt(question, schemaResult.schema, history),
+        max_output_tokens: 1200
+      })
+    });
+
+    const responseBody = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return {
+        error: responseBody?.error?.message || `OpenAI request failed with HTTP ${response.status}.`
+      };
+    }
+
+    const text = extractResponseText(responseBody);
+    if (!text) {
+      return { error: 'OpenAI returned an empty response.' };
+    }
+
+    return {
+      text,
+      model,
+      schemaLength: schemaResult.schema.length
     };
   } catch (error) {
     return { error: error.message };

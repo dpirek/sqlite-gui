@@ -1,4 +1,6 @@
 const openDbBtn = document.getElementById('open-db-btn');
+const toggleLeftBtn = document.getElementById('toggle-left-btn');
+const toggleRightBtn = document.getElementById('toggle-right-btn');
 const refreshDbBtn = document.getElementById('refresh-db-btn');
 const runQueryBtn = document.getElementById('run-query-btn');
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
@@ -8,10 +10,15 @@ const statusEl = document.getElementById('status');
 const resultsTable = document.getElementById('results');
 const dbPathEl = document.getElementById('db-path');
 const tablesEl = document.getElementById('tables');
+const assistantMessagesEl = document.getElementById('assistant-messages');
+const assistantForm = document.getElementById('assistant-form');
+const assistantInput = document.getElementById('assistant-input');
+const assistantSubmitBtn = document.getElementById('assistant-submit-btn');
 const THEME_STORAGE_KEY = 'sqlite-gui-theme';
 
 let editableTableName = null;
 let editableRowIdColumn = '__rowid__';
+let assistantChatHistory = [];
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -36,6 +43,23 @@ function initializeTheme() {
 
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   setTheme(prefersDark ? 'dark' : 'light');
+}
+
+function setPanelCollapsed(side, collapsed) {
+  const className = side === 'left' ? 'left-collapsed' : 'right-collapsed';
+  const button = side === 'left' ? toggleLeftBtn : toggleRightBtn;
+  const panelName = side === 'left' ? 'tables panel' : 'SQL assistant';
+  const action = collapsed ? 'Expand' : 'Collapse';
+
+  document.body.classList.toggle(className, collapsed);
+  button.setAttribute('aria-pressed', String(collapsed));
+  button.setAttribute('aria-label', `${action} ${panelName}`);
+  button.setAttribute('title', `${action} ${panelName}`);
+}
+
+function togglePanel(side) {
+  const className = side === 'left' ? 'left-collapsed' : 'right-collapsed';
+  setPanelCollapsed(side, !document.body.classList.contains(className));
 }
 
 function clearResults() {
@@ -252,6 +276,76 @@ function syncQueryHighlight() {
   queryHighlight.innerHTML = highlightSql(queryInput.value);
   queryHighlight.scrollTop = queryInput.scrollTop;
   queryHighlight.scrollLeft = queryInput.scrollLeft;
+}
+
+function extractSqlBlock(text) {
+  const fencedSql = text.match(/```sql\s*([\s\S]*?)```/i);
+  if (fencedSql) {
+    return fencedSql[1].trim();
+  }
+
+  const fenced = text.match(/```\s*([\s\S]*?)```/);
+  if (fenced) {
+    return fenced[1].trim();
+  }
+
+  return '';
+}
+
+function appendAssistantMessage(role, text, options = {}) {
+  const messageEl = document.createElement('div');
+  const bodyEl = document.createElement('div');
+  messageEl.classList.add('assistant-message', ...role.split(/\s+/).filter(Boolean));
+  bodyEl.classList.add('assistant-message-body');
+  bodyEl.textContent = text;
+  messageEl.appendChild(bodyEl);
+
+  if (options.sql) {
+    const useSqlBtn = document.createElement('button');
+    useSqlBtn.type = 'button';
+    useSqlBtn.classList.add('use-sql-btn');
+    useSqlBtn.textContent = 'Use SQL';
+    useSqlBtn.addEventListener('click', () => {
+      queryInput.value = options.sql;
+      syncQueryHighlight();
+      queryInput.focus();
+      setStatus('Generated SQL loaded into the editor.');
+    });
+    messageEl.appendChild(useSqlBtn);
+  }
+
+  assistantMessagesEl.appendChild(messageEl);
+  assistantMessagesEl.scrollTop = assistantMessagesEl.scrollHeight;
+}
+
+async function askSqlAssistant(message) {
+  const history = assistantChatHistory.slice(-8);
+  assistantSubmitBtn.disabled = true;
+  assistantInput.disabled = true;
+  appendAssistantMessage('user', message);
+  assistantChatHistory.push({ role: 'user', content: message });
+  appendAssistantMessage('assistant', 'Generating SQL from the current schema...');
+
+  const pendingMessage = assistantMessagesEl.lastElementChild;
+  const result = await window.sqliteGui.generateSql({ message, history });
+
+  pendingMessage.remove();
+
+  if (result.error) {
+    appendAssistantMessage('assistant error', result.error);
+    assistantSubmitBtn.disabled = false;
+    assistantInput.disabled = false;
+    assistantInput.focus();
+    return;
+  }
+
+  appendAssistantMessage('assistant', result.text, {
+    sql: extractSqlBlock(result.text)
+  });
+  assistantChatHistory.push({ role: 'assistant', content: result.text });
+  assistantSubmitBtn.disabled = false;
+  assistantInput.disabled = false;
+  assistantInput.focus();
 }
 
 function renderRows(columns, rows, options = {}) {
@@ -596,6 +690,14 @@ openDbBtn.addEventListener('click', async () => {
   clearResults();
 });
 
+toggleLeftBtn.addEventListener('click', () => {
+  togglePanel('left');
+});
+
+toggleRightBtn.addEventListener('click', () => {
+  togglePanel('right');
+});
+
 refreshDbBtn.addEventListener('click', reloadDatabaseFile);
 
 runQueryBtn.addEventListener('click', runQuery);
@@ -612,6 +714,25 @@ resultsTable.addEventListener('click', (event) => {
   }
 
   enableCellEditing(cell);
+});
+
+assistantForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const message = assistantInput.value.trim();
+
+  if (!message) {
+    return;
+  }
+
+  assistantInput.value = '';
+  await askSqlAssistant(message);
+});
+
+assistantInput.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault();
+    assistantForm.requestSubmit();
+  }
 });
 
 queryInput.addEventListener('keydown', (event) => {

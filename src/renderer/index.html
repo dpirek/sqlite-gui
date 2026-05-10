@@ -11,6 +11,22 @@
       <h1>SQLite GUI</h1>
       <span id="db-path">No database selected</span>
       <div class="header-actions" aria-label="Database actions">
+        <button id="toggle-left-btn" class="icon-btn" type="button" aria-label="Collapse tables panel" title="Collapse tables panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16" />
+            <path d="M4 19h16" />
+            <path d="M10 12h10" />
+            <path class="left-toggle-arrow" d="m7 9-3 3 3 3" />
+          </svg>
+        </button>
+        <button id="toggle-right-btn" class="icon-btn" type="button" aria-label="Collapse SQL assistant" title="Collapse SQL assistant">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16" />
+            <path d="M4 19h16" />
+            <path d="M4 12h10" />
+            <path class="right-toggle-arrow" d="m17 9 3 3-3 3" />
+          </svg>
+        </button>
         <button id="open-db-btn" class="icon-btn" type="button" aria-label="Open SQLite file" title="Open SQLite file">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M3 6.75A2.75 2.75 0 0 1 5.75 4H10l2 2.5h6.25A2.75 2.75 0 0 1 21 9.25v8A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25V6.75Z" />
@@ -63,6 +79,27 @@
           <table id="results"></table>
         </div>
       </section>
+
+      <aside class="assistant-panel">
+        <header class="assistant-header">
+          <h2>SQL Assistant</h2>
+          <span>Schema-aware</span>
+        </header>
+        <div id="assistant-messages" class="assistant-messages">
+          <div class="assistant-message assistant">
+            Ask for a query. The current database schema is included automatically.
+          </div>
+        </div>
+        <form id="assistant-form" class="assistant-form">
+          <textarea
+            id="assistant-input"
+            rows="4"
+            spellcheck="true"
+            placeholder="Show monthly revenue by customer..."
+          ></textarea>
+          <button id="assistant-submit-btn" type="submit">Generate SQL</button>
+        </form>
+      </aside>
     </main>
 
     <script src="./renderer.js"></script>
