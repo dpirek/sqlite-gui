@@ -12,9 +12,11 @@ try {
 let mainWindow;
 let activeDb = null;
 let activeDbPath = null;
+let startupDbError = null;
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
 const DEFAULT_OPENAI_MODEL = 'gpt-5';
+const SETTINGS_FILE_NAME = 'settings.json';
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -56,6 +58,56 @@ function openDatabaseFile(filePath) {
   activeDbPath = filePath;
 
   return { filePath };
+}
+
+function getSettingsPath() {
+  return path.join(app.getPath('userData'), SETTINGS_FILE_NAME);
+}
+
+function readSettings() {
+  try {
+    const settingsPath = getSettingsPath();
+
+    if (!fs.existsSync(settingsPath)) {
+      return {};
+    }
+
+    return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  } catch (_error) {
+    return {};
+  }
+}
+
+function writeSettings(settings) {
+  const settingsPath = getSettingsPath();
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+}
+
+function persistSelectedDatabaseFile(filePath) {
+  writeSettings({
+    ...readSettings(),
+    selectedDatabaseFile: filePath
+  });
+}
+
+function restoreSelectedDatabaseFile() {
+  const filePath = readSettings().selectedDatabaseFile;
+
+  if (!filePath) {
+    return;
+  }
+
+  if (!fs.existsSync(filePath)) {
+    startupDbError = `Previously selected database was not found: ${filePath}`;
+    persistSelectedDatabaseFile(null);
+    return;
+  }
+
+  const result = openDatabaseFile(filePath);
+  if (result.error) {
+    startupDbError = result.error;
+  }
 }
 
 function parseEnvFile(content) {
@@ -224,6 +276,7 @@ function buildSqlAssistantPrompt(question, schema, history = []) {
 }
 
 app.whenReady().then(() => {
+  restoreSelectedDatabaseFile();
   createWindow();
 
   app.on('activate', () => {
@@ -257,11 +310,20 @@ ipcMain.handle('db:choose-file', async () => {
 
   try {
     const result = openDatabaseFile(filePath);
+    if (!result.error) {
+      persistSelectedDatabaseFile(filePath);
+      startupDbError = null;
+    }
     return { canceled: false, ...result };
   } catch (error) {
     return { canceled: false, error: error.message };
   }
 });
+
+ipcMain.handle('db:current', async () => ({
+  filePath: activeDbPath,
+  error: startupDbError
+}));
 
 ipcMain.handle('db:reload-file', async () => {
   if (!activeDbPath) {

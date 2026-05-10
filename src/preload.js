@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('sqliteGui', {
   chooseDatabaseFile: () => ipcRenderer.invoke('db:choose-file'),
+  getCurrentDatabaseFile: () => ipcRenderer.invoke('db:current'),
   reloadDatabaseFile: () => ipcRenderer.invoke('db:reload-file'),
   getTables: () => ipcRenderer.invoke('db:tables'),
   getTablePreview: (tableName) => ipcRenderer.invoke('db:table-preview', tableName),

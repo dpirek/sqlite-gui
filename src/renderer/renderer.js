@@ -514,6 +514,25 @@ async function reloadDatabaseFile() {
   refreshDbBtn.disabled = false;
 }
 
+async function initializeDatabaseFromPersistence() {
+  const result = await window.sqliteGui.getCurrentDatabaseFile();
+
+  if (result.error) {
+    setStatus(result.error, true);
+  }
+
+  if (!result.filePath) {
+    return;
+  }
+
+  editableTableName = null;
+  dbPathEl.textContent = result.filePath;
+  refreshDbBtn.disabled = false;
+  setStatus('Database restored.');
+  await refreshTables();
+  clearResults();
+}
+
 async function runQuery() {
   const sql = queryInput.value;
   editableTableName = null;
@@ -747,3 +766,4 @@ queryInput.addEventListener('scroll', syncQueryHighlight);
 
 initializeTheme();
 syncQueryHighlight();
+initializeDatabaseFromPersistence();
