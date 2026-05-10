@@ -225,7 +225,7 @@ body.left-collapsed .sidebar {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
-  font-size: 12px;
+  font-size: 13px;
   overflow: auto;
 }
 
@@ -271,7 +271,6 @@ body.left-collapsed .sidebar {
 .columns-table th {
   background: var(--panel-alt);
   color: var(--muted);
-  font-size: 11px;
   font-weight: 600;
 }
 
