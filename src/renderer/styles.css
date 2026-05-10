@@ -238,6 +238,10 @@ button:disabled:hover {
   top: 0;
 }
 
+#results tfoot td {
+  border-bottom: none;
+}
+
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
@@ -256,6 +260,34 @@ button:disabled:hover {
 
 .editable-cell:hover {
   background: var(--panel-alt);
+}
+
+.insert-row td {
+  background: color-mix(in srgb, var(--panel-alt) 55%, transparent);
+}
+
+.insert-row td:empty::before {
+  color: var(--muted);
+  content: "+";
+}
+
+#results .insert-action-cell {
+  padding: 6px 8px;
+  text-align: right;
+}
+
+.insert-row-btn {
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  color: var(--text);
+  padding: 4px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.insert-row-btn:hover {
+  filter: brightness(0.95);
 }
 
 .editable-cell.is-editing {

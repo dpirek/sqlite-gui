@@ -212,6 +212,60 @@ ipcMain.handle('db:update-cell', async (_event, payload) => {
   }
 });
 
+ipcMain.handle('db:insert-row', async (_event, payload) => {
+  const dbError = ensureDbReady();
+  if (dbError) {
+    return dbError;
+  }
+
+  const tableName = payload?.tableName;
+  const values = payload?.values;
+
+  if (!tableName || typeof tableName !== 'string') {
+    return { error: 'Invalid table name.' };
+  }
+
+  if (!values || typeof values !== 'object' || Array.isArray(values)) {
+    return { error: 'Invalid row values.' };
+  }
+
+  try {
+    const tableExists = activeDb
+      .prepare("SELECT 1 AS existsFlag FROM sqlite_master WHERE type='table' AND name = ? LIMIT 1")
+      .get(tableName);
+
+    if (!tableExists) {
+      return { error: `Table '${tableName}' not found.` };
+    }
+
+    const tableColumns = activeDb
+      .prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`)
+      .all()
+      .map((column) => column.name);
+    const insertColumns = Object.keys(values).filter(
+      (columnName) => columnName !== '__rowid__' && tableColumns.includes(columnName)
+    );
+
+    if (insertColumns.length === 0) {
+      return { error: 'Enter at least one value before inserting a row.' };
+    }
+
+    const placeholders = insertColumns.map(() => '?').join(', ');
+    const sql = `INSERT INTO ${quoteIdentifier(tableName)} (${insertColumns
+      .map(quoteIdentifier)
+      .join(', ')}) VALUES (${placeholders})`;
+    const result = activeDb.prepare(sql).run(...insertColumns.map((columnName) => values[columnName]));
+
+    return {
+      ok: true,
+      changes: result.changes,
+      lastInsertRowid: Number(result.lastInsertRowid ?? 0)
+    };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
 ipcMain.handle('db:query', async (_event, sql) => {
   const dbError = ensureDbReady();
   if (dbError) {

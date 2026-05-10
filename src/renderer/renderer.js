@@ -61,20 +61,29 @@ function renderRows(columns, rows, options = {}) {
   resultsTable.appendChild(thead);
 
   const tbody = document.createElement('tbody');
+
+  const makeEditableCell = (column, rowId = null, isNewRow = false) => {
+    const td = document.createElement('td');
+    td.classList.add('editable-cell');
+    td.dataset.columnName = column;
+
+    if (isNewRow) {
+      td.dataset.newRow = 'true';
+      return td;
+    }
+
+    td.dataset.rowId = String(rowId);
+    return td;
+  };
+
   for (const row of rows) {
     const tr = document.createElement('tr');
     const rowId = rowIdColumn ? row[rowIdColumn] : undefined;
 
     for (const column of displayColumns) {
-      const td = document.createElement('td');
+      const td = editable ? makeEditableCell(column, rowId) : document.createElement('td');
       const value = row[column];
       td.textContent = value === null || value === undefined ? '' : String(value);
-
-      if (editable) {
-        td.classList.add('editable-cell');
-        td.dataset.columnName = column;
-        td.dataset.rowId = String(rowId);
-      }
 
       tr.appendChild(td);
     }
@@ -82,7 +91,37 @@ function renderRows(columns, rows, options = {}) {
     tbody.appendChild(tr);
   }
 
+  if (editable) {
+    const emptyRow = document.createElement('tr');
+    emptyRow.classList.add('insert-row');
+
+    for (const column of displayColumns) {
+      emptyRow.appendChild(makeEditableCell(column, null, true));
+    }
+
+    tbody.appendChild(emptyRow);
+  }
+
   resultsTable.appendChild(tbody);
+
+  if (editable) {
+    const tfoot = document.createElement('tfoot');
+    const actionRow = document.createElement('tr');
+    const actionCell = document.createElement('td');
+    const insertButton = document.createElement('button');
+
+    actionCell.colSpan = Math.max(displayColumns.length, 1);
+    actionCell.classList.add('insert-action-cell');
+    insertButton.type = 'button';
+    insertButton.classList.add('insert-row-btn');
+    insertButton.textContent = 'Insert';
+    insertButton.addEventListener('click', insertStagedRow);
+
+    actionCell.appendChild(insertButton);
+    actionRow.appendChild(actionCell);
+    tfoot.appendChild(actionRow);
+    resultsTable.appendChild(tfoot);
+  }
 }
 
 async function loadTablePreview(tableName) {
@@ -190,6 +229,47 @@ async function runQuery() {
   setStatus(`Query OK. Changes: ${result.changes}, Last Insert RowID: ${result.lastInsertRowid}`);
 }
 
+async function insertStagedRow(event) {
+  if (!editableTableName) {
+    return;
+  }
+
+  const insertButton = event.currentTarget;
+  const values = {};
+  const insertCells = resultsTable.querySelectorAll('tr.insert-row td[data-new-row="true"]');
+
+  for (const cell of insertCells) {
+    const columnName = cell.dataset.columnName;
+    const value = cell.textContent;
+
+    if (columnName && value !== '') {
+      values[columnName] = value;
+    }
+  }
+
+  if (Object.keys(values).length === 0) {
+    setStatus('Enter at least one value before inserting a row.', true);
+    return;
+  }
+
+  insertButton.disabled = true;
+  setStatus('Inserting row...');
+
+  const result = await window.sqliteGui.insertRow({
+    tableName: editableTableName,
+    values
+  });
+
+  if (result.error) {
+    setStatus(result.error, true);
+    insertButton.disabled = false;
+    return;
+  }
+
+  setStatus('Row inserted.');
+  await loadTablePreview(editableTableName);
+}
+
 function selectCellText(cell) {
   const range = document.createRange();
   range.selectNodeContents(cell);
@@ -204,10 +284,11 @@ function enableCellEditing(cell) {
   }
 
   const originalValue = cell.textContent;
+  const isNewRow = cell.dataset.newRow === 'true';
   const rowId = Number(cell.dataset.rowId);
   const columnName = cell.dataset.columnName;
 
-  if (!Number.isFinite(rowId) || !columnName) {
+  if ((!isNewRow && !Number.isFinite(rowId)) || !columnName) {
     return;
   }
 
@@ -236,6 +317,10 @@ function enableCellEditing(cell) {
 
     const nextValue = cell.textContent;
     if (nextValue === originalValue) {
+      return;
+    }
+
+    if (isNewRow) {
       return;
     }
 

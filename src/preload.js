@@ -6,5 +6,6 @@ contextBridge.exposeInMainWorld('sqliteGui', {
   getTables: () => ipcRenderer.invoke('db:tables'),
   getTablePreview: (tableName) => ipcRenderer.invoke('db:table-preview', tableName),
   updateCell: (payload) => ipcRenderer.invoke('db:update-cell', payload),
+  insertRow: (payload) => ipcRenderer.invoke('db:insert-row', payload),
   runQuery: (sql) => ipcRenderer.invoke('db:query', sql)
 });
