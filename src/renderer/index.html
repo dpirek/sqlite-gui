@@ -49,7 +49,10 @@
 
       <section class="workspace">
         <label for="query">SQL Query</label>
-        <textarea id="query" spellcheck="false">SELECT name FROM sqlite_master WHERE type='table';</textarea>
+        <div class="sql-editor">
+          <pre id="query-highlight" class="sql-highlight" aria-hidden="true"></pre>
+          <textarea id="query" spellcheck="false" wrap="off">SELECT name FROM sqlite_master WHERE type='table';</textarea>
+        </div>
         <div class="actions">
           <button id="run-query-btn">Run Query</button>
         </div>

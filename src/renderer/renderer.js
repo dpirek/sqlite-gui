@@ -3,6 +3,7 @@ const refreshDbBtn = document.getElementById('refresh-db-btn');
 const runQueryBtn = document.getElementById('run-query-btn');
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
 const queryInput = document.getElementById('query');
+const queryHighlight = document.getElementById('query-highlight');
 const statusEl = document.getElementById('status');
 const resultsTable = document.getElementById('results');
 const dbPathEl = document.getElementById('db-path');
@@ -39,6 +40,218 @@ function initializeTheme() {
 
 function clearResults() {
   resultsTable.innerHTML = '';
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function highlightSql(sql) {
+  const keywords = new Set([
+    'abort',
+    'action',
+    'add',
+    'after',
+    'all',
+    'alter',
+    'and',
+    'as',
+    'asc',
+    'attach',
+    'autoincrement',
+    'before',
+    'begin',
+    'between',
+    'by',
+    'cascade',
+    'case',
+    'check',
+    'collate',
+    'column',
+    'commit',
+    'conflict',
+    'constraint',
+    'create',
+    'cross',
+    'current_date',
+    'current_time',
+    'current_timestamp',
+    'database',
+    'default',
+    'deferrable',
+    'deferred',
+    'delete',
+    'desc',
+    'detach',
+    'distinct',
+    'do',
+    'drop',
+    'each',
+    'else',
+    'end',
+    'escape',
+    'except',
+    'exclude',
+    'exclusive',
+    'exists',
+    'explain',
+    'fail',
+    'filter',
+    'first',
+    'following',
+    'for',
+    'foreign',
+    'from',
+    'full',
+    'generated',
+    'glob',
+    'group',
+    'groups',
+    'having',
+    'if',
+    'ignore',
+    'immediate',
+    'in',
+    'index',
+    'indexed',
+    'initially',
+    'inner',
+    'insert',
+    'instead',
+    'intersect',
+    'into',
+    'is',
+    'isnull',
+    'join',
+    'key',
+    'last',
+    'left',
+    'like',
+    'limit',
+    'match',
+    'materialized',
+    'natural',
+    'no',
+    'not',
+    'nothing',
+    'notnull',
+    'null',
+    'nulls',
+    'of',
+    'offset',
+    'on',
+    'or',
+    'order',
+    'others',
+    'outer',
+    'over',
+    'partition',
+    'plan',
+    'pragma',
+    'preceding',
+    'primary',
+    'query',
+    'raise',
+    'range',
+    'recursive',
+    'references',
+    'regexp',
+    'reindex',
+    'release',
+    'rename',
+    'replace',
+    'restrict',
+    'returning',
+    'right',
+    'rollback',
+    'row',
+    'rows',
+    'savepoint',
+    'select',
+    'set',
+    'table',
+    'temp',
+    'temporary',
+    'then',
+    'ties',
+    'to',
+    'transaction',
+    'trigger',
+    'unbounded',
+    'union',
+    'unique',
+    'update',
+    'using',
+    'vacuum',
+    'values',
+    'view',
+    'virtual',
+    'when',
+    'where',
+    'window',
+    'with',
+    'without'
+  ]);
+  const tokenPattern =
+    /(--[^\n]*|\/\*[\s\S]*?\*\/|'(?:''|[^'])*'|"(?:[^"]|"")*"|`(?:[^`]|``)*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b|[(),.;*+=<>!|/-])/g;
+
+  const source = sql || ' ';
+  let highlighted = '';
+  let previousIndex = 0;
+
+  for (const match of source.matchAll(tokenPattern)) {
+    const token = match[0];
+    highlighted += escapeHtml(source.slice(previousIndex, match.index));
+    previousIndex = match.index + token.length;
+
+    const escaped = escapeHtml(token);
+    const lowerToken = token.toLowerCase();
+
+    if (token.startsWith('--') || token.startsWith('/*')) {
+      highlighted += `<span class="sql-comment">${escaped}</span>`;
+      continue;
+    }
+
+    if (token.startsWith("'")) {
+      highlighted += `<span class="sql-string">${escaped}</span>`;
+      continue;
+    }
+
+    if (token.startsWith('"') || token.startsWith('`')) {
+      highlighted += `<span class="sql-identifier">${escaped}</span>`;
+      continue;
+    }
+
+    if (/^\d/.test(token)) {
+      highlighted += `<span class="sql-number">${escaped}</span>`;
+      continue;
+    }
+
+    if (keywords.has(lowerToken)) {
+      highlighted += `<span class="sql-keyword">${escaped}</span>`;
+      continue;
+    }
+
+    if (/^[(),.;*+=<>!|/-]$/.test(token)) {
+      highlighted += `<span class="sql-operator">${escaped}</span>`;
+      continue;
+    }
+
+    highlighted += escaped;
+  }
+
+  return highlighted + escapeHtml(source.slice(previousIndex));
+}
+
+function syncQueryHighlight() {
+  queryHighlight.innerHTML = highlightSql(queryInput.value);
+  queryHighlight.scrollTop = queryInput.scrollTop;
+  queryHighlight.scrollLeft = queryInput.scrollLeft;
 }
 
 function renderRows(columns, rows, options = {}) {
@@ -155,6 +368,7 @@ function renderTables(tables) {
     btn.textContent = table;
     btn.addEventListener('click', async () => {
       queryInput.value = `SELECT * FROM ${table} LIMIT 100;`;
+      syncQueryHighlight();
       await loadTablePreview(table);
     });
     li.appendChild(btn);
@@ -407,4 +621,8 @@ queryInput.addEventListener('keydown', (event) => {
   }
 });
 
+queryInput.addEventListener('input', syncQueryHighlight);
+queryInput.addEventListener('scroll', syncQueryHighlight);
+
 initializeTheme();
+syncQueryHighlight();

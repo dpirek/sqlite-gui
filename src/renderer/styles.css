@@ -9,6 +9,12 @@
   --primary: #106ba3;
   --primary-strong: #0a4f7a;
   --border: #d9e1e8;
+  --sql-keyword: #0b63a8;
+  --sql-string: #8a4b00;
+  --sql-number: #7b3eb5;
+  --sql-comment: #6f7b86;
+  --sql-identifier: #1c7a5e;
+  --sql-operator: #5f6c7b;
 }
 
 body[data-theme="dark"] {
@@ -22,6 +28,12 @@ body[data-theme="dark"] {
   --primary: #4c9fd4;
   --primary-strong: #2d87bf;
   --border: #334357;
+  --sql-keyword: #7fc7ff;
+  --sql-string: #ffc27a;
+  --sql-number: #d7a8ff;
+  --sql-comment: #7f92a5;
+  --sql-identifier: #75dab8;
+  --sql-operator: #b2c0ce;
 }
 
 * {
@@ -182,16 +194,86 @@ button:disabled:hover {
   overflow: hidden;
 }
 
-#query {
+.sql-editor {
+  position: relative;
   width: 100%;
   height: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+#query,
+.sql-highlight {
+  position: absolute;
+  inset: 0;
+  margin: 0;
   padding: 10px;
   font-family: "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: 13px;
+  line-height: 1.45;
+  tab-size: 2;
+  white-space: pre;
+}
+
+#query {
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
   resize: none;
   overflow: auto;
+}
+
+#query:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+#query::selection {
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
+  color: transparent;
+}
+
+.sql-highlight {
+  pointer-events: none;
+  color: var(--text);
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.sql-highlight::-webkit-scrollbar {
+  display: none;
+}
+
+.sql-keyword {
+  color: var(--sql-keyword);
+  font-weight: 600;
+}
+
+.sql-string {
+  color: var(--sql-string);
+}
+
+.sql-number {
+  color: var(--sql-number);
+}
+
+.sql-comment {
+  color: var(--sql-comment);
+  font-style: italic;
+}
+
+.sql-identifier {
+  color: var(--sql-identifier);
+}
+
+.sql-operator {
+  color: var(--sql-operator);
 }
 
 .actions {
