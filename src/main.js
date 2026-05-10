@@ -35,6 +35,26 @@ function closeActiveDb() {
   }
 }
 
+function openDatabaseFile(filePath) {
+  if (!DatabaseSync) {
+    return {
+      error:
+        "This runtime does not expose Node's built-in 'node:sqlite' module. Use a Node/Electron version that supports it."
+    };
+  }
+
+  if (!fs.existsSync(filePath)) {
+    return { error: 'Selected file does not exist.' };
+  }
+
+  const nextDb = new DatabaseSync(filePath, { readOnly: false });
+  closeActiveDb();
+  activeDb = nextDb;
+  activeDbPath = filePath;
+
+  return { filePath };
+}
+
 function quoteIdentifier(identifier) {
   return `"${String(identifier).replace(/"/g, '""')}"`;
 }
@@ -80,24 +100,24 @@ ipcMain.handle('db:choose-file', async () => {
   const filePath = result.filePaths[0];
 
   try {
-    if (!DatabaseSync) {
-      return {
-        canceled: false,
-        error:
-          "This runtime does not expose Node's built-in 'node:sqlite' module. Use a Node/Electron version that supports it."
-      };
-    }
-
-    if (!fs.existsSync(filePath)) {
-      return { canceled: false, error: 'Selected file does not exist.' };
-    }
-
-    closeActiveDb();
-    activeDb = new DatabaseSync(filePath, { readOnly: false });
-    activeDbPath = filePath;
-    return { canceled: false, filePath };
+    const result = openDatabaseFile(filePath);
+    return { canceled: false, ...result };
   } catch (error) {
     return { canceled: false, error: error.message };
+  }
+});
+
+ipcMain.handle('db:reload-file', async () => {
+  if (!activeDbPath) {
+    return { error: 'No database selected.' };
+  }
+
+  const filePath = activeDbPath;
+
+  try {
+    return openDatabaseFile(filePath);
+  } catch (error) {
+    return { error: error.message };
   }
 });
 

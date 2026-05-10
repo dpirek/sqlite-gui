@@ -48,9 +48,9 @@ body {
 .topbar h1 {
   margin: 0;
   font-size: 18px;
+  flex: 0 0 auto;
 }
 
-#open-db-btn,
 #run-query-btn {
   border: none;
   background: var(--primary);
@@ -60,13 +60,59 @@ body {
   cursor: pointer;
 }
 
-#open-db-btn:hover,
 #run-query-btn:hover {
   background: var(--primary-strong);
 }
 
-.ghost-btn {
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  filter: brightness(0.95);
+}
+
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+body[data-theme="light"] .theme-icon-light,
+body[data-theme="dark"] .theme-icon-dark {
+  display: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button:disabled:hover {
+  filter: none;
+}
+
+.ghost-btn {
   border: 1px solid var(--border);
   background: var(--panel-alt);
   color: var(--text);
@@ -82,6 +128,8 @@ body {
 #db-path {
   color: var(--muted);
   font-size: 13px;
+  min-width: 0;
+  flex: 1 1 auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

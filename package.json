@@ -4,7 +4,10 @@
   "description": "Local SQLite GUI built with Electron",
   "main": "src/main.js",
   "scripts": {
-    "start": "electron ."
+  "start": "electron .",
+  "package": "electron-forge package",
+  "make": "electron-forge make",
+  "build": "electron-builder" 
   },
   "keywords": [
     "electron",

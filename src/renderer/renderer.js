@@ -1,4 +1,5 @@
 const openDbBtn = document.getElementById('open-db-btn');
+const refreshDbBtn = document.getElementById('refresh-db-btn');
 const runQueryBtn = document.getElementById('run-query-btn');
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
 const queryInput = document.getElementById('query');
@@ -18,7 +19,10 @@ function setStatus(message, isError = false) {
 
 function setTheme(theme) {
   document.body.dataset.theme = theme;
-  themeToggleBtn.textContent = theme === 'dark' ? 'Light Mode' : 'Dark Mode';
+  const nextTheme = theme === 'dark' ? 'light' : 'dark';
+  const label = `Switch to ${nextTheme} mode`;
+  themeToggleBtn.setAttribute('aria-label', label);
+  themeToggleBtn.setAttribute('title', label);
   localStorage.setItem(THEME_STORAGE_KEY, theme);
 }
 
@@ -134,6 +138,33 @@ async function refreshTables() {
   }
 
   renderTables(result.tables || []);
+}
+
+async function reloadDatabaseFile() {
+  const tableToReload = editableTableName;
+  refreshDbBtn.disabled = true;
+  setStatus('Refreshing database file...');
+
+  const result = await window.sqliteGui.reloadDatabaseFile();
+
+  if (result.error) {
+    setStatus(result.error, true);
+    refreshDbBtn.disabled = false;
+    return;
+  }
+
+  dbPathEl.textContent = result.filePath;
+  await refreshTables();
+
+  if (tableToReload) {
+    await loadTablePreview(tableToReload);
+  } else {
+    editableTableName = null;
+    clearResults();
+    setStatus('Database file refreshed.');
+  }
+
+  refreshDbBtn.disabled = false;
 }
 
 async function runQuery() {
@@ -260,10 +291,13 @@ openDbBtn.addEventListener('click', async () => {
 
   editableTableName = null;
   dbPathEl.textContent = result.filePath;
+  refreshDbBtn.disabled = false;
   setStatus('Database opened.');
   await refreshTables();
   clearResults();
 });
+
+refreshDbBtn.addEventListener('click', reloadDatabaseFile);
 
 runQueryBtn.addEventListener('click', runQuery);
 

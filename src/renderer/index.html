@@ -9,9 +9,36 @@
   <body>
     <header class="topbar">
       <h1>SQLite GUI</h1>
-      <button id="open-db-btn">Open SQLite File</button>
       <span id="db-path">No database selected</span>
-      <button id="theme-toggle-btn" class="ghost-btn">Dark Mode</button>
+      <div class="header-actions" aria-label="Database actions">
+        <button id="open-db-btn" class="icon-btn" type="button" aria-label="Open SQLite file" title="Open SQLite file">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 6.75A2.75 2.75 0 0 1 5.75 4H10l2 2.5h6.25A2.75 2.75 0 0 1 21 9.25v8A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25V6.75Z" />
+          </svg>
+        </button>
+        <button id="refresh-db-btn" class="icon-btn" type="button" aria-label="Refresh database file" title="Refresh database file" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 12a8 8 0 1 1-2.35-5.66" />
+            <path d="M20 4v5h-5" />
+          </svg>
+        </button>
+        <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Switch to dark mode" title="Switch to dark mode">
+          <svg class="theme-icon theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 14.25A8.5 8.5 0 0 1 9.75 3a7 7 0 1 0 11.25 11.25Z" />
+          </svg>
+          <svg class="theme-icon theme-icon-light" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4V2" />
+            <path d="M12 22v-2" />
+            <path d="m4.93 4.93 1.41 1.41" />
+            <path d="m17.66 17.66 1.41 1.41" />
+            <path d="M4 12H2" />
+            <path d="M22 12h-2" />
+            <path d="m6.34 17.66-1.41 1.41" />
+            <path d="m19.07 4.93-1.41 1.41" />
+            <circle cx="12" cy="12" r="4" />
+          </svg>
+        </button>
+      </div>
     </header>
 
     <main class="layout">
