@@ -4,12 +4,20 @@ const toggleRightBtn = document.getElementById('toggle-right-btn');
 const refreshDbBtn = document.getElementById('refresh-db-btn');
 const runQueryBtn = document.getElementById('run-query-btn');
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
+const queryLabel = document.getElementById('query-label');
 const queryInput = document.getElementById('query');
 const queryHighlight = document.getElementById('query-highlight');
 const statusEl = document.getElementById('status');
 const resultsTable = document.getElementById('results');
+const resultsWrap = document.getElementById('results-wrap');
 const dbPathEl = document.getElementById('db-path');
 const tablesEl = document.getElementById('tables');
+const columnsEditorEl = document.getElementById('columns-editor');
+const columnsTableNameEl = document.getElementById('columns-table-name');
+const columnsListEl = document.getElementById('columns-list');
+const addColumnBtn = document.getElementById('add-column-btn');
+const addColumnNameInput = document.getElementById('add-column-name');
+const addColumnTypeSelect = document.getElementById('add-column-type');
 const assistantMessagesEl = document.getElementById('assistant-messages');
 const assistantForm = document.getElementById('assistant-form');
 const assistantInput = document.getElementById('assistant-input');
@@ -18,6 +26,7 @@ const THEME_STORAGE_KEY = 'sqlite-gui-theme';
 
 let editableTableName = null;
 let editableRowIdColumn = '__rowid__';
+let selectedTableName = null;
 let assistantChatHistory = [];
 
 function setStatus(message, isError = false) {
@@ -64,6 +73,17 @@ function togglePanel(side) {
 
 function clearResults() {
   resultsTable.innerHTML = '';
+}
+
+function setWorkspaceMode(mode, options = {}) {
+  const isColumnMode = mode === 'columns';
+  const hideQueryActions = isColumnMode || Boolean(options.hideQueryActions);
+  document.body.classList.toggle('column-edit-mode', isColumnMode);
+  queryLabel.hidden = isColumnMode;
+  queryInput.closest('.sql-editor').hidden = isColumnMode;
+  runQueryBtn.hidden = hideQueryActions;
+  resultsWrap.hidden = isColumnMode;
+  columnsEditorEl.hidden = !isColumnMode;
 }
 
 function escapeHtml(value) {
@@ -432,6 +452,7 @@ function renderRows(columns, rows, options = {}) {
 }
 
 async function loadTablePreview(tableName) {
+  setWorkspaceMode('data', { hideQueryActions: true });
   setStatus(`Loading '${tableName}'...`);
   const result = await window.sqliteGui.getTablePreview(tableName);
 
@@ -452,20 +473,188 @@ async function loadTablePreview(tableName) {
   setStatus(`Loaded ${result.rowCount} row(s) from '${tableName}'. Click a cell to edit.`);
 }
 
+async function refreshCurrentTableAfterSchemaChange(message) {
+  await refreshTables();
+
+  if (selectedTableName) {
+    await loadColumnEditor(selectedTableName);
+  }
+
+  if (editableTableName === selectedTableName) {
+    editableTableName = null;
+    clearResults();
+  }
+
+  setStatus(message);
+}
+
+function renderColumns(columns) {
+  columnsListEl.innerHTML = '';
+
+  for (const column of columns) {
+    const tr = document.createElement('tr');
+    const nameCell = document.createElement('td');
+    const typeCell = document.createElement('td');
+    const notNullCell = document.createElement('td');
+    const primaryKeyCell = document.createElement('td');
+    const defaultCell = document.createElement('td');
+    const actionsCell = document.createElement('td');
+    const nameInput = document.createElement('input');
+    const typeEl = document.createElement('span');
+    const notNullEl = document.createElement('span');
+    const primaryKeyEl = document.createElement('span');
+    const defaultEl = document.createElement('span');
+    const actions = document.createElement('div');
+    const renameBtn = document.createElement('button');
+    const dropBtn = document.createElement('button');
+
+    actions.classList.add('column-actions');
+    nameInput.type = 'text';
+    nameInput.value = column.name;
+    nameInput.autocomplete = 'off';
+    typeEl.classList.add('column-type');
+    typeEl.textContent = column.type || 'ANY';
+    notNullEl.classList.add('column-check-cell');
+    notNullEl.textContent = column.notnull ? '✓' : '';
+    primaryKeyEl.classList.add('column-check-cell');
+    primaryKeyEl.textContent = column.primaryKey ? '✓' : '';
+    defaultEl.classList.add('column-default');
+    defaultEl.textContent = column.defaultValue === null || column.defaultValue === undefined ? '' : String(column.defaultValue);
+
+    renameBtn.type = 'button';
+    renameBtn.classList.add('column-icon-btn');
+    renameBtn.setAttribute('aria-label', `Rename ${column.name}`);
+    renameBtn.setAttribute('title', `Rename ${column.name}`);
+    renameBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+      </svg>
+    `;
+    renameBtn.addEventListener('click', async () => {
+      const nextName = nameInput.value.trim();
+
+      if (!selectedTableName || nextName === column.name) {
+        return;
+      }
+
+      setStatus(`Renaming '${column.name}'...`);
+      const result = await window.sqliteGui.renameColumn({
+        tableName: selectedTableName,
+        oldColumnName: column.name,
+        newColumnName: nextName
+      });
+
+      if (result.error) {
+        setStatus(result.error, true);
+        return;
+      }
+
+      await refreshCurrentTableAfterSchemaChange(`Renamed '${column.name}' to '${nextName}'.`);
+    });
+
+    dropBtn.type = 'button';
+    dropBtn.classList.add('column-icon-btn', 'danger-btn');
+    dropBtn.setAttribute('aria-label', `Drop ${column.name}`);
+    dropBtn.setAttribute('title', `Drop ${column.name}`);
+    dropBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 6h18" />
+        <path d="M8 6V4h8v2" />
+        <path d="M19 6l-1 14H6L5 6" />
+        <path d="M10 11v5" />
+        <path d="M14 11v5" />
+      </svg>
+    `;
+    dropBtn.addEventListener('click', async () => {
+      if (!selectedTableName || !window.confirm(`Drop column '${column.name}' from '${selectedTableName}'?`)) {
+        return;
+      }
+
+      setStatus(`Dropping '${column.name}'...`);
+      const result = await window.sqliteGui.dropColumn({
+        tableName: selectedTableName,
+        columnName: column.name
+      });
+
+      if (result.error) {
+        setStatus(result.error, true);
+        return;
+      }
+
+      await refreshCurrentTableAfterSchemaChange(`Dropped '${column.name}'.`);
+    });
+
+    nameCell.appendChild(nameInput);
+    typeCell.appendChild(typeEl);
+    notNullCell.appendChild(notNullEl);
+    primaryKeyCell.appendChild(primaryKeyEl);
+    defaultCell.appendChild(defaultEl);
+    actions.appendChild(renameBtn);
+    actions.appendChild(dropBtn);
+    actionsCell.appendChild(actions);
+    tr.appendChild(nameCell);
+    tr.appendChild(typeCell);
+    tr.appendChild(notNullCell);
+    tr.appendChild(primaryKeyCell);
+    tr.appendChild(defaultCell);
+    tr.appendChild(actionsCell);
+    columnsListEl.appendChild(tr);
+  }
+}
+
+async function loadColumnEditor(tableName) {
+  selectedTableName = tableName;
+  setWorkspaceMode('columns');
+  columnsTableNameEl.textContent = tableName;
+  columnsListEl.innerHTML = '';
+
+  const result = await window.sqliteGui.getTableColumns(tableName);
+
+  if (result.error) {
+    setStatus(result.error, true);
+    return;
+  }
+
+  renderColumns(result.columns || []);
+}
+
 function renderTables(tables) {
   tablesEl.innerHTML = '';
 
   for (const table of tables) {
     const li = document.createElement('li');
+    const row = document.createElement('div');
     const btn = document.createElement('button');
+    const columnsBtn = document.createElement('button');
+    row.classList.add('table-list-row');
     btn.type = 'button';
     btn.textContent = table;
     btn.addEventListener('click', async () => {
+      selectedTableName = table;
       queryInput.value = `SELECT * FROM ${table} LIMIT 100;`;
       syncQueryHighlight();
       await loadTablePreview(table);
     });
-    li.appendChild(btn);
+    columnsBtn.type = 'button';
+    columnsBtn.classList.add('table-columns-btn');
+    columnsBtn.setAttribute('aria-label', `Edit columns for ${table}`);
+    columnsBtn.setAttribute('title', `Edit columns for ${table}`);
+    columnsBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 5h16" />
+        <path d="M4 12h16" />
+        <path d="M4 19h16" />
+        <path d="M8 3v18" />
+        <path d="M16 3v18" />
+      </svg>
+    `;
+    columnsBtn.addEventListener('click', async () => {
+      await loadColumnEditor(table);
+    });
+    row.appendChild(btn);
+    row.appendChild(columnsBtn);
+    li.appendChild(row);
     tablesEl.appendChild(li);
   }
 
@@ -474,6 +663,8 @@ function renderTables(tables) {
     li.textContent = 'No tables found';
     li.style.color = 'var(--muted)';
     tablesEl.appendChild(li);
+    setWorkspaceMode('data');
+    selectedTableName = null;
   }
 }
 
@@ -484,7 +675,13 @@ async function refreshTables() {
     return;
   }
 
-  renderTables(result.tables || []);
+  const tables = result.tables || [];
+  renderTables(tables);
+
+  if (selectedTableName && !tables.includes(selectedTableName)) {
+    selectedTableName = null;
+    setWorkspaceMode('data');
+  }
 }
 
 async function reloadDatabaseFile() {
@@ -535,6 +732,7 @@ async function initializeDatabaseFromPersistence() {
 
 async function runQuery() {
   const sql = queryInput.value;
+  setWorkspaceMode('data');
   editableTableName = null;
   setStatus('Running query...');
 
@@ -702,6 +900,8 @@ openDbBtn.addEventListener('click', async () => {
   }
 
   editableTableName = null;
+  selectedTableName = null;
+  setWorkspaceMode('data');
   dbPathEl.textContent = result.filePath;
   refreshDbBtn.disabled = false;
   setStatus('Database opened.');
@@ -735,6 +935,35 @@ resultsTable.addEventListener('click', (event) => {
   enableCellEditing(cell);
 });
 
+addColumnBtn.addEventListener('click', async () => {
+  if (!selectedTableName) {
+    return;
+  }
+
+  const columnName = addColumnNameInput.value.trim();
+  const columnType = addColumnTypeSelect.value;
+
+  if (!columnName) {
+    setStatus('Column name is required.', true);
+    return;
+  }
+
+  setStatus(`Adding '${columnName}'...`);
+  const result = await window.sqliteGui.addColumn({
+    tableName: selectedTableName,
+    columnName,
+    columnType
+  });
+
+  if (result.error) {
+    setStatus(result.error, true);
+    return;
+  }
+
+  addColumnNameInput.value = '';
+  await refreshCurrentTableAfterSchemaChange(`Added '${columnName}'.`);
+});
+
 assistantForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const message = assistantInput.value.trim();
@@ -765,5 +994,7 @@ queryInput.addEventListener('input', syncQueryHighlight);
 queryInput.addEventListener('scroll', syncQueryHighlight);
 
 initializeTheme();
+setPanelCollapsed('right', document.body.classList.contains('right-collapsed'));
 syncQueryHighlight();
+setWorkspaceMode('data');
 initializeDatabaseFromPersistence();

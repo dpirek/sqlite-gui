@@ -178,6 +178,49 @@ function ensureDbReady() {
   return null;
 }
 
+function validateIdentifierValue(value, label) {
+  if (!value || typeof value !== 'string' || !value.trim()) {
+    return `${label} is required.`;
+  }
+
+  return null;
+}
+
+function getTableColumns(tableName) {
+  return activeDb.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`).all();
+}
+
+function ensureTableExists(tableName) {
+  const identifierError = validateIdentifierValue(tableName, 'Table name');
+  if (identifierError) {
+    return { error: identifierError };
+  }
+
+  const tableExists = activeDb
+    .prepare("SELECT 1 AS existsFlag FROM sqlite_master WHERE type='table' AND name = ? LIMIT 1")
+    .get(tableName);
+
+  if (!tableExists) {
+    return { error: `Table '${tableName}' not found.` };
+  }
+
+  return null;
+}
+
+function ensureColumnExists(tableName, columnName) {
+  const identifierError = validateIdentifierValue(columnName, 'Column name');
+  if (identifierError) {
+    return { error: identifierError };
+  }
+
+  const exists = getTableColumns(tableName).some((column) => column.name === columnName);
+  if (!exists) {
+    return { error: `Column '${columnName}' not found.` };
+  }
+
+  return null;
+}
+
 function getDatabaseSchemaContext() {
   const dbError = ensureDbReady();
   if (dbError) {
@@ -350,6 +393,142 @@ ipcMain.handle('db:tables', async () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
       .all();
     return { tables: rows.map((row) => row.name), dbPath: activeDbPath };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('db:table-columns', async (_event, tableName) => {
+  const dbError = ensureDbReady();
+  if (dbError) {
+    return dbError;
+  }
+
+  const tableError = ensureTableExists(tableName);
+  if (tableError) {
+    return tableError;
+  }
+
+  try {
+    return {
+      tableName,
+      columns: getTableColumns(tableName).map((column) => ({
+        name: column.name,
+        type: column.type || '',
+        notnull: Boolean(column.notnull),
+        defaultValue: column.dflt_value,
+        primaryKey: Boolean(column.pk)
+      }))
+    };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('db:add-column', async (_event, payload) => {
+  const dbError = ensureDbReady();
+  if (dbError) {
+    return dbError;
+  }
+
+  const tableName = payload?.tableName;
+  const columnName = String(payload?.columnName || '').trim();
+  const columnType = String(payload?.columnType || 'TEXT').trim().toUpperCase();
+  const allowedTypes = new Set(['TEXT', 'INTEGER', 'REAL', 'NUMERIC', 'BLOB']);
+
+  const tableError = ensureTableExists(tableName);
+  if (tableError) {
+    return tableError;
+  }
+
+  const columnNameError = validateIdentifierValue(columnName, 'Column name');
+  if (columnNameError) {
+    return { error: columnNameError };
+  }
+
+  if (!allowedTypes.has(columnType)) {
+    return { error: 'Invalid column type.' };
+  }
+
+  if (getTableColumns(tableName).some((column) => column.name === columnName)) {
+    return { error: `Column '${columnName}' already exists.` };
+  }
+
+  try {
+    activeDb
+      .prepare(`ALTER TABLE ${quoteIdentifier(tableName)} ADD COLUMN ${quoteIdentifier(columnName)} ${columnType}`)
+      .run();
+    return { ok: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('db:rename-column', async (_event, payload) => {
+  const dbError = ensureDbReady();
+  if (dbError) {
+    return dbError;
+  }
+
+  const tableName = payload?.tableName;
+  const oldColumnName = payload?.oldColumnName;
+  const newColumnName = String(payload?.newColumnName || '').trim();
+
+  const tableError = ensureTableExists(tableName);
+  if (tableError) {
+    return tableError;
+  }
+
+  const columnError = ensureColumnExists(tableName, oldColumnName);
+  if (columnError) {
+    return columnError;
+  }
+
+  const newColumnError = validateIdentifierValue(newColumnName, 'New column name');
+  if (newColumnError) {
+    return { error: newColumnError };
+  }
+
+  if (getTableColumns(tableName).some((column) => column.name === newColumnName)) {
+    return { error: `Column '${newColumnName}' already exists.` };
+  }
+
+  try {
+    activeDb
+      .prepare(
+        `ALTER TABLE ${quoteIdentifier(tableName)} RENAME COLUMN ${quoteIdentifier(oldColumnName)} TO ${quoteIdentifier(
+          newColumnName
+        )}`
+      )
+      .run();
+    return { ok: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('db:drop-column', async (_event, payload) => {
+  const dbError = ensureDbReady();
+  if (dbError) {
+    return dbError;
+  }
+
+  const tableName = payload?.tableName;
+  const columnName = payload?.columnName;
+
+  const tableError = ensureTableExists(tableName);
+  if (tableError) {
+    return tableError;
+  }
+
+  const columnError = ensureColumnExists(tableName, columnName);
+  if (columnError) {
+    return columnError;
+  }
+
+  try {
+    activeDb.prepare(`ALTER TABLE ${quoteIdentifier(tableName)} DROP COLUMN ${quoteIdentifier(columnName)}`).run();
+    return { ok: true };
   } catch (error) {
     return { error: error.message };
   }
