@@ -15,6 +15,8 @@
   --sql-comment: #6f7b86;
   --sql-identifier: #1c7a5e;
   --sql-operator: #5f6c7b;
+  --left-panel-width: 250px;
+  --right-panel-width: 340px;
 }
 
 body[data-theme="dark"] {
@@ -136,16 +138,17 @@ button:disabled:hover {
 .layout {
   height: calc(100vh - 58px);
   display: grid;
-  grid-template-columns: 250px minmax(0, 1fr) 340px;
+  grid-template-columns: var(--left-panel-width) minmax(0, 1fr) var(--right-panel-width);
+  position: relative;
   overflow: hidden;
 }
 
 body.left-collapsed .layout {
-  grid-template-columns: 0 minmax(0, 1fr) 340px;
+  grid-template-columns: 0 minmax(0, 1fr) var(--right-panel-width);
 }
 
 body.right-collapsed .layout {
-  grid-template-columns: 250px minmax(0, 1fr) 0;
+  grid-template-columns: var(--left-panel-width) minmax(0, 1fr) 0;
 }
 
 body.left-collapsed.right-collapsed .layout {
@@ -163,6 +166,47 @@ body.left-collapsed .sidebar {
   border-right: none;
   padding: 0;
   visibility: hidden;
+}
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 10px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  outline: none;
+}
+
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: transparent;
+}
+
+.resize-handle:hover::after,
+.resize-handle:focus-visible::after,
+body.resizing-columns .resize-handle::after {
+  background: var(--primary);
+}
+
+.resize-handle-left {
+  left: var(--left-panel-width);
+}
+
+.resize-handle-right {
+  right: var(--right-panel-width);
+  transform: translateX(50%);
+}
+
+body.left-collapsed .resize-handle-left,
+body.right-collapsed .resize-handle-right {
+  display: none;
 }
 
 .sidebar h2 {
@@ -669,6 +713,10 @@ body.left-collapsed .left-toggle-arrow {
   .assistant-panel {
     border-left: none;
     border-top: 1px solid var(--border);
+  }
+
+  .resize-handle {
+    display: none;
   }
 }
 

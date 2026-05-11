@@ -1,6 +1,8 @@
 const openDbBtn = document.getElementById('open-db-btn');
 const toggleLeftBtn = document.getElementById('toggle-left-btn');
 const toggleRightBtn = document.getElementById('toggle-right-btn');
+const leftResizeHandle = document.getElementById('left-resize-handle');
+const rightResizeHandle = document.getElementById('right-resize-handle');
 const refreshDbBtn = document.getElementById('refresh-db-btn');
 const runQueryBtn = document.getElementById('run-query-btn');
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
@@ -23,6 +25,12 @@ const assistantForm = document.getElementById('assistant-form');
 const assistantInput = document.getElementById('assistant-input');
 const assistantSubmitBtn = document.getElementById('assistant-submit-btn');
 const THEME_STORAGE_KEY = 'sqlite-gui-theme';
+const PANEL_WIDTH_STORAGE_KEY = 'sqlite-gui-panel-widths';
+const PANEL_WIDTH_LIMITS = {
+  left: { min: 180, max: 520, fallback: 250 },
+  right: { min: 260, max: 620, fallback: 340 }
+};
+const MIN_WORKSPACE_WIDTH = 320;
 
 let editableTableName = null;
 let editableRowIdColumn = '__rowid__';
@@ -52,6 +60,124 @@ function initializeTheme() {
 
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   setTheme(prefersDark ? 'dark' : 'light');
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getPanelWidth(side) {
+  const cssValue = getComputedStyle(document.documentElement)
+    .getPropertyValue(side === 'left' ? '--left-panel-width' : '--right-panel-width')
+    .trim();
+  const width = Number.parseFloat(cssValue);
+  return Number.isFinite(width) ? width : PANEL_WIDTH_LIMITS[side].fallback;
+}
+
+function getPanelWidthState() {
+  return {
+    left: getPanelWidth('left'),
+    right: getPanelWidth('right')
+  };
+}
+
+function getMaxPanelWidth(side, widths = getPanelWidthState()) {
+  const layoutWidth = document.querySelector('.layout')?.getBoundingClientRect().width || window.innerWidth;
+  const otherSide = side === 'left' ? 'right' : 'left';
+  const otherIsCollapsed = document.body.classList.contains(`${otherSide}-collapsed`);
+  const reservedWidth = otherIsCollapsed ? 0 : widths[otherSide];
+  const availableWidth = layoutWidth - reservedWidth - MIN_WORKSPACE_WIDTH;
+  return Math.max(PANEL_WIDTH_LIMITS[side].min, Math.min(PANEL_WIDTH_LIMITS[side].max, availableWidth));
+}
+
+function setPanelWidth(side, width, options = {}) {
+  const widths = getPanelWidthState();
+  const max = getMaxPanelWidth(side, widths);
+  const nextWidth = clamp(Math.round(width), PANEL_WIDTH_LIMITS[side].min, max);
+  const propertyName = side === 'left' ? '--left-panel-width' : '--right-panel-width';
+
+  document.documentElement.style.setProperty(propertyName, `${nextWidth}px`);
+
+  if (options.persist) {
+    persistPanelWidths();
+  }
+}
+
+function persistPanelWidths() {
+  localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, JSON.stringify(getPanelWidthState()));
+}
+
+function initializePanelWidths() {
+  let savedWidths = {};
+
+  try {
+    savedWidths = JSON.parse(localStorage.getItem(PANEL_WIDTH_STORAGE_KEY) || '{}') || {};
+  } catch (_error) {
+    savedWidths = {};
+  }
+
+  for (const side of ['left', 'right']) {
+    if (Number.isFinite(savedWidths[side])) {
+      setPanelWidth(side, savedWidths[side]);
+    }
+  }
+}
+
+function setupPanelResize(side, handle) {
+  const isLeft = side === 'left';
+  const collapsedClassName = isLeft ? 'left-collapsed' : 'right-collapsed';
+
+  const resizeToClientX = (clientX, shouldPersist = false) => {
+    if (document.body.classList.contains(collapsedClassName)) {
+      return;
+    }
+
+    const layoutRect = document.querySelector('.layout').getBoundingClientRect();
+    const width = isLeft ? clientX - layoutRect.left : layoutRect.right - clientX;
+    setPanelWidth(side, width, { persist: shouldPersist });
+  };
+
+  handle.addEventListener('pointerdown', (event) => {
+    if (document.body.classList.contains(collapsedClassName)) {
+      return;
+    }
+
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    document.body.classList.add('resizing-columns');
+    resizeToClientX(event.clientX);
+  });
+
+  handle.addEventListener('pointermove', (event) => {
+    if (!handle.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+
+    resizeToClientX(event.clientX);
+  });
+
+  const stopResize = (event) => {
+    if (handle.hasPointerCapture(event.pointerId)) {
+      resizeToClientX(event.clientX, true);
+      handle.releasePointerCapture(event.pointerId);
+    }
+
+    document.body.classList.remove('resizing-columns');
+  };
+
+  handle.addEventListener('pointerup', stopResize);
+  handle.addEventListener('pointercancel', stopResize);
+
+  handle.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+
+    event.preventDefault();
+    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    const delta = event.shiftKey ? 40 : 16;
+    setPanelWidth(side, getPanelWidth(side) + (isLeft ? direction : -direction) * delta, { persist: true });
+  });
 }
 
 function setPanelCollapsed(side, collapsed) {
@@ -993,7 +1119,15 @@ queryInput.addEventListener('keydown', (event) => {
 queryInput.addEventListener('input', syncQueryHighlight);
 queryInput.addEventListener('scroll', syncQueryHighlight);
 
+window.addEventListener('resize', () => {
+  setPanelWidth('left', getPanelWidth('left'));
+  setPanelWidth('right', getPanelWidth('right'), { persist: true });
+});
+
 initializeTheme();
+initializePanelWidths();
+setupPanelResize('left', leftResizeHandle);
+setupPanelResize('right', rightResizeHandle);
 setPanelCollapsed('right', document.body.classList.contains('right-collapsed'));
 syncQueryHighlight();
 setWorkspaceMode('data');
