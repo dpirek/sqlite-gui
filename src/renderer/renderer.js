@@ -6,6 +6,8 @@ const rightResizeHandle = document.getElementById('right-resize-handle');
 const refreshDbBtn = document.getElementById('refresh-db-btn');
 const runQueryBtn = document.getElementById('run-query-btn');
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
+const queryTabsEl = document.getElementById('query-tabs');
+const addQueryTabBtn = document.getElementById('add-query-tab-btn');
 const queryLabel = document.getElementById('query-label');
 const queryInput = document.getElementById('query');
 const queryHighlight = document.getElementById('query-highlight');
@@ -13,6 +15,7 @@ const statusEl = document.getElementById('status');
 const resultsTable = document.getElementById('results');
 const resultsWrap = document.getElementById('results-wrap');
 const dbPathEl = document.getElementById('db-path');
+const dbInfoEl = document.getElementById('db-info');
 const tablesEl = document.getElementById('tables');
 const columnsEditorEl = document.getElementById('columns-editor');
 const columnsTableNameEl = document.getElementById('columns-table-name');
@@ -31,15 +34,100 @@ const PANEL_WIDTH_LIMITS = {
   right: { min: 260, max: 620, fallback: 340 }
 };
 const MIN_WORKSPACE_WIDTH = 320;
+const DEFAULT_QUERY_SQL = "SELECT name FROM sqlite_master WHERE type='table';";
 
 let editableTableName = null;
 let editableRowIdColumn = '__rowid__';
 let selectedTableName = null;
 let assistantChatHistory = [];
+let queryTabs = [];
+let activeQueryTabId = null;
+let nextQueryTabNumber = 1;
+let workspaceMode = 'data';
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
   statusEl.style.color = isError ? 'var(--error)' : 'var(--muted)';
+
+  if (workspaceMode === 'data') {
+    const tab = getActiveQueryTab();
+    if (tab) {
+      tab.status = message;
+      tab.isError = isError;
+    }
+  }
+}
+
+function getActiveQueryTab() {
+  return queryTabs.find((tab) => tab.id === activeQueryTabId) || null;
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0 B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const exponent = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  const size = value / 1024 ** exponent;
+  const precision = size >= 10 || exponent === 0 ? 0 : 1;
+  return `${size.toFixed(precision)} ${units[exponent]}`;
+}
+
+function formatCount(value) {
+  return new Intl.NumberFormat().format(Number(value) || 0);
+}
+
+function formatModifiedDate(value) {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+function setDatabaseHeader(info = {}) {
+  dbPathEl.textContent = info.filePath || 'No database selected';
+
+  if (!info.filePath) {
+    dbInfoEl.textContent = '';
+    dbInfoEl.setAttribute('title', '');
+    return;
+  }
+
+  if (info.fileSizeBytes === undefined && info.tableCount === undefined) {
+    dbInfoEl.textContent = 'Loading database info...';
+    dbInfoEl.setAttribute('title', dbInfoEl.textContent);
+    return;
+  }
+
+  const parts = [
+    formatBytes(info.fileSizeBytes),
+    `${formatCount(info.tableCount)} tables`,
+    `${formatCount(info.totalRecords)} records`,
+    `${formatCount(info.viewCount)} views`,
+    `${formatCount(info.indexCount)} indexes`
+  ];
+  const modifiedDate = formatModifiedDate(info.modifiedAt);
+
+  if (modifiedDate) {
+    parts.push(`modified ${modifiedDate}`);
+  }
+
+  dbInfoEl.textContent = parts.join(' · ');
+  dbInfoEl.setAttribute('title', dbInfoEl.textContent);
 }
 
 function setTheme(theme) {
@@ -197,14 +285,224 @@ function togglePanel(side) {
   setPanelCollapsed(side, !document.body.classList.contains(className));
 }
 
+function createQueryTab(sql = DEFAULT_QUERY_SQL) {
+  const number = nextQueryTabNumber;
+  nextQueryTabNumber += 1;
+
+  return {
+    id: `query-tab-${number}-${Date.now()}`,
+    title: `Query ${number}`,
+    sql,
+    status: 'Ready.',
+    isError: false,
+    result: null,
+    hideQueryActions: false,
+    editableTableName: null,
+    editableRowIdColumn: '__rowid__'
+  };
+}
+
+function renderQueryTabs() {
+  queryTabsEl.innerHTML = '';
+
+  for (const tab of queryTabs) {
+    const tabEl = document.createElement('div');
+    const tabButton = document.createElement('button');
+    const titleEl = document.createElement('span');
+    const closeBtn = document.createElement('button');
+
+    tabEl.classList.add('query-tab');
+    tabEl.classList.toggle('is-active', tab.id === activeQueryTabId);
+    tabEl.setAttribute('role', 'presentation');
+    tabButton.type = 'button';
+    tabButton.classList.add('query-tab-select');
+    tabButton.setAttribute('role', 'tab');
+    tabButton.setAttribute('aria-selected', String(tab.id === activeQueryTabId));
+    tabButton.setAttribute('title', tab.title);
+    tabButton.dataset.tabId = tab.id;
+    titleEl.classList.add('query-tab-title');
+    titleEl.textContent = tab.title;
+
+    closeBtn.type = 'button';
+    closeBtn.classList.add('query-tab-close');
+    closeBtn.setAttribute('aria-label', `Close ${tab.title}`);
+    closeBtn.setAttribute('title', `Close ${tab.title}`);
+    closeBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+      </svg>
+    `;
+
+    tabButton.addEventListener('click', () => {
+      activateQueryTab(tab.id);
+    });
+
+    closeBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeQueryTab(tab.id);
+    });
+
+    tabButton.appendChild(titleEl);
+    tabEl.appendChild(tabButton);
+    tabEl.appendChild(closeBtn);
+    queryTabsEl.appendChild(tabEl);
+  }
+}
+
+function renderActiveQueryResult() {
+  const tab = getActiveQueryTab();
+  clearResults();
+
+  if (!tab?.result) {
+    return;
+  }
+
+  if (tab.result.mode === 'rows') {
+    renderRows(tab.result.columns || [], tab.result.rows || [], tab.result.options || {});
+  }
+}
+
+function activateQueryTab(tabId) {
+  const tab = queryTabs.find((item) => item.id === tabId);
+  if (!tab) {
+    return;
+  }
+
+  const currentTab = getActiveQueryTab();
+  if (currentTab) {
+    currentTab.sql = queryInput.value;
+  }
+
+  activeQueryTabId = tab.id;
+  editableTableName = tab.editableTableName;
+  editableRowIdColumn = tab.editableRowIdColumn || '__rowid__';
+  queryInput.value = tab.sql;
+  runQueryBtn.hidden = Boolean(tab.hideQueryActions);
+  setStatus(tab.status, tab.isError);
+  syncQueryHighlight();
+  renderQueryTabs();
+  renderActiveQueryResult();
+}
+
+function addQueryTab(sql = DEFAULT_QUERY_SQL, options = {}) {
+  const tab = createQueryTab(sql);
+  queryTabs.push(tab);
+  activateQueryTab(tab.id);
+  if (options.focus !== false) {
+    queryInput.focus();
+  }
+}
+
+function closeQueryTab(tabId) {
+  if (queryTabs.length === 1) {
+    const tab = getActiveQueryTab();
+    if (tab) {
+      tab.sql = DEFAULT_QUERY_SQL;
+      tab.status = 'Ready.';
+      tab.isError = false;
+      tab.result = null;
+      tab.hideQueryActions = false;
+      tab.editableTableName = null;
+      tab.editableRowIdColumn = '__rowid__';
+      activateQueryTab(tab.id);
+    }
+    return;
+  }
+
+  const index = queryTabs.findIndex((tab) => tab.id === tabId);
+  if (index === -1) {
+    return;
+  }
+
+  queryTabs.splice(index, 1);
+
+  if (activeQueryTabId === tabId) {
+    const nextTab = queryTabs[Math.min(index, queryTabs.length - 1)];
+    activateQueryTab(nextTab.id);
+    return;
+  }
+
+  renderQueryTabs();
+}
+
+function setActiveQueryResult(result) {
+  const tab = getActiveQueryTab();
+  if (!tab) {
+    return;
+  }
+
+  tab.result = result;
+  tab.hideQueryActions = Boolean(result?.hideQueryActions);
+  tab.editableTableName = result?.options?.editable ? result.options.tableName : null;
+  tab.editableRowIdColumn = result?.options?.rowIdColumn || '__rowid__';
+  editableTableName = tab.editableTableName;
+  editableRowIdColumn = tab.editableRowIdColumn;
+  runQueryBtn.hidden = tab.hideQueryActions;
+}
+
+function resetQueryTabResults(status = 'Ready.') {
+  for (const tab of queryTabs) {
+    tab.status = status;
+    tab.isError = false;
+    tab.result = null;
+    tab.hideQueryActions = false;
+    tab.editableTableName = null;
+    tab.editableRowIdColumn = '__rowid__';
+  }
+
+  const activeTab = getActiveQueryTab();
+  if (activeTab) {
+    editableTableName = null;
+    editableRowIdColumn = '__rowid__';
+    runQueryBtn.hidden = false;
+    setStatus(activeTab.status, activeTab.isError);
+  }
+
+  clearResults();
+}
+
 function clearResults() {
   resultsTable.innerHTML = '';
 }
 
+function clearActiveQueryResult() {
+  const tab = getActiveQueryTab();
+  if (tab) {
+    tab.result = null;
+    tab.hideQueryActions = false;
+    tab.editableTableName = null;
+    tab.editableRowIdColumn = '__rowid__';
+  }
+
+  editableTableName = null;
+  editableRowIdColumn = '__rowid__';
+  if (workspaceMode === 'data') {
+    runQueryBtn.hidden = false;
+  }
+  clearResults();
+}
+
+function updateActiveEditableResultCell(rowId, columnName, value) {
+  const tab = getActiveQueryTab();
+  const rowIdColumn = tab?.result?.options?.rowIdColumn;
+
+  if (!rowIdColumn || !Array.isArray(tab?.result?.rows)) {
+    return;
+  }
+
+  const row = tab.result.rows.find((item) => Number(item[rowIdColumn]) === rowId);
+  if (row) {
+    row[columnName] = value;
+  }
+}
+
 function setWorkspaceMode(mode, options = {}) {
+  workspaceMode = mode;
   const isColumnMode = mode === 'columns';
   const hideQueryActions = isColumnMode || Boolean(options.hideQueryActions);
   document.body.classList.toggle('column-edit-mode', isColumnMode);
+  queryTabsEl.closest('.query-tabs-bar').hidden = isColumnMode;
   queryLabel.hidden = isColumnMode;
   queryInput.closest('.sql-editor').hidden = isColumnMode;
   runQueryBtn.hidden = hideQueryActions;
@@ -453,6 +751,10 @@ function appendAssistantMessage(role, text, options = {}) {
     useSqlBtn.textContent = 'Use SQL';
     useSqlBtn.addEventListener('click', () => {
       queryInput.value = options.sql;
+      const tab = getActiveQueryTab();
+      if (tab) {
+        tab.sql = options.sql;
+      }
       syncQueryHighlight();
       queryInput.focus();
       setStatus('Generated SQL loaded into the editor.');
@@ -583,18 +885,26 @@ async function loadTablePreview(tableName) {
   const result = await window.sqliteGui.getTablePreview(tableName);
 
   if (result.error) {
-    editableTableName = null;
     setStatus(result.error, true);
-    clearResults();
+    clearActiveQueryResult();
     return;
   }
 
   editableTableName = result.tableName;
   editableRowIdColumn = result.rowIdColumn || '__rowid__';
-  renderRows(result.columns || [], result.rows || [], {
+  const renderOptions = {
     editable: true,
     tableName: editableTableName,
     rowIdColumn: editableRowIdColumn
+  };
+  renderRows(result.columns || [], result.rows || [], renderOptions);
+  setActiveQueryResult({
+    mode: 'rows',
+    columns: result.columns || [],
+    rows: result.rows || [],
+    rowCount: result.rowCount,
+    hideQueryActions: true,
+    options: renderOptions
   });
   setStatus(`Loaded ${result.rowCount} row(s) from '${tableName}'. Click a cell to edit.`);
 }
@@ -607,8 +917,7 @@ async function refreshCurrentTableAfterSchemaChange(message) {
   }
 
   if (editableTableName === selectedTableName) {
-    editableTableName = null;
-    clearResults();
+    clearActiveQueryResult();
   }
 
   setStatus(message);
@@ -759,6 +1068,10 @@ function renderTables(tables) {
     btn.addEventListener('click', async () => {
       selectedTableName = table;
       queryInput.value = `SELECT * FROM ${table} LIMIT 100;`;
+      const tab = getActiveQueryTab();
+      if (tab) {
+        tab.sql = queryInput.value;
+      }
       syncQueryHighlight();
       await loadTablePreview(table);
     });
@@ -768,11 +1081,8 @@ function renderTables(tables) {
     columnsBtn.setAttribute('title', `Edit columns for ${table}`);
     columnsBtn.innerHTML = `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 5h16" />
-        <path d="M4 12h16" />
-        <path d="M4 19h16" />
-        <path d="M8 3v18" />
-        <path d="M16 3v18" />
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
       </svg>
     `;
     columnsBtn.addEventListener('click', async () => {
@@ -802,6 +1112,7 @@ async function refreshTables() {
   }
 
   const tables = result.tables || [];
+  setDatabaseHeader(result.dbInfo || { filePath: result.dbPath });
   renderTables(tables);
 
   if (selectedTableName && !tables.includes(selectedTableName)) {
@@ -823,14 +1134,13 @@ async function reloadDatabaseFile() {
     return;
   }
 
-  dbPathEl.textContent = result.filePath;
+  setDatabaseHeader({ filePath: result.filePath });
   await refreshTables();
 
   if (tableToReload) {
     await loadTablePreview(tableToReload);
   } else {
-    editableTableName = null;
-    clearResults();
+    clearActiveQueryResult();
     setStatus('Database file refreshed.');
   }
 
@@ -849,15 +1159,19 @@ async function initializeDatabaseFromPersistence() {
   }
 
   editableTableName = null;
-  dbPathEl.textContent = result.filePath;
+  setDatabaseHeader({ filePath: result.filePath });
   refreshDbBtn.disabled = false;
   setStatus('Database restored.');
   await refreshTables();
-  clearResults();
+  resetQueryTabResults('Database restored.');
 }
 
 async function runQuery() {
   const sql = queryInput.value;
+  const activeTab = getActiveQueryTab();
+  if (activeTab) {
+    activeTab.sql = sql;
+  }
   setWorkspaceMode('data');
   editableTableName = null;
   setStatus('Running query...');
@@ -866,18 +1180,34 @@ async function runQuery() {
 
   if (result.error) {
     setStatus(result.error, true);
-    clearResults();
+    clearActiveQueryResult();
     return;
   }
 
   if (result.mode === 'rows') {
-    renderRows(result.columns || [], result.rows || [], { editable: false });
+    const renderOptions = { editable: false };
+    renderRows(result.columns || [], result.rows || [], renderOptions);
+    setActiveQueryResult({
+      mode: 'rows',
+      columns: result.columns || [],
+      rows: result.rows || [],
+      rowCount: result.rowCount,
+      hideQueryActions: false,
+      options: renderOptions
+    });
     setStatus(`Returned ${result.rowCount} row(s).`);
     return;
   }
 
-  clearResults();
+  clearActiveQueryResult();
+  setActiveQueryResult({
+    mode: 'run',
+    changes: result.changes,
+    lastInsertRowid: result.lastInsertRowid,
+    hideQueryActions: false
+  });
   setStatus(`Query OK. Changes: ${result.changes}, Last Insert RowID: ${result.lastInsertRowid}`);
+  await refreshTables();
 }
 
 async function insertStagedRow(event) {
@@ -919,6 +1249,7 @@ async function insertStagedRow(event) {
 
   setStatus('Row inserted.');
   await loadTablePreview(editableTableName);
+  await refreshTables();
 }
 
 function selectCellText(cell) {
@@ -990,6 +1321,8 @@ function enableCellEditing(cell) {
     }
 
     setStatus('Cell saved.');
+    updateActiveEditableResultCell(rowId, columnName, nextValue);
+    await refreshTables();
   };
 
   const onBlur = () => {
@@ -1028,11 +1361,11 @@ openDbBtn.addEventListener('click', async () => {
   editableTableName = null;
   selectedTableName = null;
   setWorkspaceMode('data');
-  dbPathEl.textContent = result.filePath;
+  setDatabaseHeader({ filePath: result.filePath });
   refreshDbBtn.disabled = false;
   setStatus('Database opened.');
   await refreshTables();
-  clearResults();
+  resetQueryTabResults('Database opened.');
 });
 
 toggleLeftBtn.addEventListener('click', () => {
@@ -1046,6 +1379,10 @@ toggleRightBtn.addEventListener('click', () => {
 refreshDbBtn.addEventListener('click', reloadDatabaseFile);
 
 runQueryBtn.addEventListener('click', runQuery);
+
+addQueryTabBtn.addEventListener('click', () => {
+  addQueryTab();
+});
 
 themeToggleBtn.addEventListener('click', () => {
   const currentTheme = document.body.dataset.theme === 'dark' ? 'dark' : 'light';
@@ -1116,7 +1453,14 @@ queryInput.addEventListener('keydown', (event) => {
   }
 });
 
-queryInput.addEventListener('input', syncQueryHighlight);
+queryInput.addEventListener('input', () => {
+  const tab = getActiveQueryTab();
+  if (tab) {
+    tab.sql = queryInput.value;
+  }
+
+  syncQueryHighlight();
+});
 queryInput.addEventListener('scroll', syncQueryHighlight);
 
 window.addEventListener('resize', () => {
@@ -1129,6 +1473,6 @@ initializePanelWidths();
 setupPanelResize('left', leftResizeHandle);
 setupPanelResize('right', rightResizeHandle);
 setPanelCollapsed('right', document.body.classList.contains('right-collapsed'));
-syncQueryHighlight();
+addQueryTab(queryInput.value || DEFAULT_QUERY_SQL, { focus: false });
 setWorkspaceMode('data');
 initializeDatabaseFromPersistence();

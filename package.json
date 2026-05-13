@@ -4,10 +4,10 @@
   "description": "Local SQLite GUI built with Electron",
   "main": "src/main.js",
   "scripts": {
-  "start": "electron .",
-  "package": "electron-forge package",
-  "make": "electron-forge make",
-  "build": "electron-builder" 
+    "start": "electron .",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "build": "electron-builder"
   },
   "keywords": [
     "electron",
@@ -19,6 +19,20 @@
   "license": "MIT",
   "devDependencies": {
     "@electron-forge/publisher-github": "^7.11.1",
-    "electron": "^36.0.0"
+    "electron": "^36.0.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.bohoosh.sqlite-gui",
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.utilities"
+    },
+    "dmg": {
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
   }
 }

@@ -190,6 +190,44 @@ function getTableColumns(tableName) {
   return activeDb.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`).all();
 }
 
+function getActiveDatabaseInfo() {
+  let stat = null;
+
+  try {
+    stat = activeDbPath ? fs.statSync(activeDbPath) : null;
+  } catch (_error) {
+    stat = null;
+  }
+
+  const objects = activeDb
+    .prepare(
+      "SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND type IN ('table', 'view', 'index') ORDER BY type, name"
+    )
+    .all();
+  const tables = objects.filter((object) => object.type === 'table');
+  const pageCount = activeDb.prepare('PRAGMA page_count').get()?.page_count || 0;
+  const pageSize = activeDb.prepare('PRAGMA page_size').get()?.page_size || 0;
+  let totalRecords = 0;
+
+  for (const table of tables) {
+    totalRecords += Number(
+      activeDb.prepare(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table.name)}`).get()?.count || 0
+    );
+  }
+
+  return {
+    filePath: activeDbPath,
+    fileSizeBytes: stat?.size || 0,
+    modifiedAt: stat?.mtime?.toISOString() || null,
+    tableCount: tables.length,
+    viewCount: objects.filter((object) => object.type === 'view').length,
+    indexCount: objects.filter((object) => object.type === 'index').length,
+    totalRecords,
+    pageCount,
+    pageSize
+  };
+}
+
 function ensureTableExists(tableName) {
   const identifierError = validateIdentifierValue(tableName, 'Table name');
   if (identifierError) {
@@ -392,7 +430,7 @@ ipcMain.handle('db:tables', async () => {
     const rows = activeDb
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
       .all();
-    return { tables: rows.map((row) => row.name), dbPath: activeDbPath };
+    return { tables: rows.map((row) => row.name), dbPath: activeDbPath, dbInfo: getActiveDatabaseInfo() };
   } catch (error) {
     return { error: error.message };
   }

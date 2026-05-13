@@ -57,7 +57,10 @@
           </svg>
         </button>
       </div>
-      <span id="db-path">No database selected</span>
+      <div class="db-header">
+        <span id="db-path">No database selected</span>
+        <span id="db-info" class="db-info"></span>
+      </div>
     </header>
 
     <main class="layout">
@@ -68,6 +71,15 @@
       <div id="left-resize-handle" class="resize-handle resize-handle-left" role="separator" aria-orientation="vertical" aria-label="Resize tables panel" tabindex="0"></div>
 
       <section class="workspace">
+        <div class="query-tabs-bar" aria-label="SQL query tabs">
+          <div id="query-tabs" class="query-tabs" role="tablist" aria-label="SQL queries"></div>
+          <button id="add-query-tab-btn" class="tab-add-btn" type="button" aria-label="New query tab" title="New query tab">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14" />
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+        </div>
         <label id="query-label" for="query">SQL Query</label>
         <div class="sql-editor">
           <pre id="query-highlight" class="sql-highlight" aria-hidden="true"></pre>

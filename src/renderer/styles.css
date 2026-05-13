@@ -124,12 +124,27 @@ button:disabled:hover {
   filter: brightness(0.95);
 }
 
-#db-path {
-  color: var(--muted);
-  font-size: 13px;
+.db-header {
+  display: grid;
+  gap: 2px;
   min-width: 0;
   flex: 1 1 auto;
   text-align: right;
+}
+
+#db-path {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-info {
+  color: var(--muted);
+  font-size: 12px;
+  min-height: 15px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -430,7 +445,7 @@ body.right-collapsed .resize-handle-right {
 
 .workspace {
   display: grid;
-  grid-template-rows: auto minmax(120px, 180px) auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(120px, 180px) auto auto minmax(0, 1fr);
   gap: 10px;
   padding: 16px;
   min-width: 0;
@@ -438,7 +453,113 @@ body.right-collapsed .resize-handle-right {
 }
 
 body.column-edit-mode .workspace {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.query-tabs-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.query-tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.query-tab {
+  min-width: 112px;
+  max-width: 220px;
+  height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 5px 0 9px;
+  background: var(--panel-alt);
+  color: var(--text);
+  font: inherit;
+}
+
+.query-tab.is-active {
+  border-color: var(--primary);
+  background: var(--panel);
+}
+
+.query-tab-select {
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.query-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: 13px;
+}
+
+.query-tab-close {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.query-tab-close:hover {
+  background: var(--panel-alt);
+  color: var(--text);
+  filter: brightness(0.95);
+}
+
+.query-tab-close svg,
+.tab-add-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.tab-add-btn {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-alt);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tab-add-btn:hover {
+  filter: brightness(0.95);
 }
 
 .assistant-panel {
